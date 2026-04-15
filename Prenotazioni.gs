@@ -116,13 +116,14 @@ function buildMappaPlanimetriaFesta_() {
     [29, 30],
     [31, 32, 33]
   ];
+  /** Blocco dx dopo un solo corridoio in G (col 7): tavoli da col 8 in poi (H, J, L, …). */
   var rightCols = [
-    [10, 12, 14],
-    [10, 12, 14],
-    [10, 12],
-    [10, 12],
-    [10, 12],
-    [10, 12, 14]
+    [8, 10, 12],
+    [8, 10, 12],
+    [8, 10],
+    [8, 10],
+    [8, 10],
+    [8, 10, 12]
   ];
   for (var lane = 0; lane < 6; lane++) {
     var top = 4 + lane * 3;
@@ -137,30 +138,41 @@ function buildMappaPlanimetriaFesta_() {
     }
   }
 
-  var topCh = 24;
+  /**
+   * Sala Chiosco: tre file verticali (3 | col sep | 3 | col sep | 4), riga separatrice,
+   * sotto fila orizzontale di 5 tavoli adiacenti (34-38).
+   */
+  var chVertTop = 24;
+  var sepCol1 = 3;
+  var sepCol2 = 6;
+  var u1 = [39, 40, 41];
+  var u2 = [42, 43, 44];
+  var u3 = [45, 46, 47, 48];
+  var j2;
+  for (j2 = 0; j2 < 3; j2++) {
+    m.push({ tavolo: u1[j2], row: chVertTop + j2 * 3, col: 1, sezione: ZONA_SALA_CHIOSCO });
+  }
+  for (j2 = 0; j2 < 3; j2++) {
+    m.push({ tavolo: u2[j2], row: chVertTop + j2 * 3, col: sepCol1 + 1, sezione: ZONA_SALA_CHIOSCO });
+  }
+  for (j2 = 0; j2 < 4; j2++) {
+    m.push({ tavolo: u3[j2], row: chVertTop + j2 * 3, col: sepCol2 + 1, sezione: ZONA_SALA_CHIOSCO });
+  }
+
+  var chHoriTop = 37;
   var chBot = [34, 35, 36, 37, 38];
   var chBotC = [1, 3, 5, 7, 9];
   for (var j = 0; j < 5; j++) {
-    m.push({ tavolo: chBot[j], row: topCh, col: chBotC[j], sezione: ZONA_SALA_CHIOSCO });
+    m.push({ tavolo: chBot[j], row: chHoriTop, col: chBotC[j], sezione: ZONA_SALA_CHIOSCO });
   }
-  var topU = 27;
-  var u1 = [39, 40, 41];
-  var c1 = [1, 3, 5];
-  var u2 = [42, 43, 44];
-  var c2 = [8, 10, 12];
-  var u3 = [45, 46, 47, 48];
-  var c3 = [15, 17, 19, 21];
-  for (var j2 = 0; j2 < 3; j2++) m.push({ tavolo: u1[j2], row: topU, col: c1[j2], sezione: ZONA_SALA_CHIOSCO });
-  for (j2 = 0; j2 < 3; j2++) m.push({ tavolo: u2[j2], row: topU, col: c2[j2], sezione: ZONA_SALA_CHIOSCO });
-  for (j2 = 0; j2 < 4; j2++) m.push({ tavolo: u3[j2], row: topU, col: c3[j2], sezione: ZONA_SALA_CHIOSCO });
 
-  // Esterna: stessa riga delle altre sezioni ma colonne contenute (evita errori "colonne fuori limiti" oltre ~26 in alcuni fogli)
-  var topE = 31;
+  /** Sala Esterna: prime colonne (stessa geometria 7x2), sotto il Chiosco. */
+  var topE = 42;
   for (lane = 0; lane < 7; lane++) {
     top = topE + lane * 3;
     var t0 = 49 + lane * 2;
-    m.push({ tavolo: t0, row: top, col: 17, sezione: ZONA_SALA_ESTERNA });
-    m.push({ tavolo: t0 + 1, row: top, col: 19, sezione: ZONA_SALA_ESTERNA });
+    m.push({ tavolo: t0, row: top, col: 1, sezione: ZONA_SALA_ESTERNA });
+    m.push({ tavolo: t0 + 1, row: top, col: 3, sezione: ZONA_SALA_ESTERNA });
   }
   return m;
 }
@@ -285,7 +297,7 @@ function creaFoglioIstruzioni_() {
     ['PLANIMETRIA E NUMERAZIONE TAVOLI (62 tavoli totali)'],
     ['Totale geometrico dalla planimetria: 33 (Sala Ballo) + 15 (Sala Chiosco) + 14 (Sala Esterna) = 62.'],
     ['Sala Ballo = tavoli 1-33: blocco sinistro 6 file x 3 tavoli orizzontali (1-18); passaggio; blocco destro 6 file con 3+3+2+2+2+3 tavoli (19-33).'],
-    ['Sala Chiosco = tavoli 34-48: in basso fila orizzontale di 5 tavoli (34-38); sopra tre file da sinistra: 3 tavoli accessibili disabili (39-41), 3 tavoli (42-44), 4 tavoli (45-48).'],
+    ['Sala Chiosco = tavoli 34-48: sopra tre file verticali separate da un corridoio (39-41 accessibili; 42-44; 45-48), sotto fila orizzontale adiacente di 5 tavoli (34-38).'],
     ['Sala Esterna = tavoli 49-62: 7 file, ciascuna con 2 tavoli affiancati orizzontalmente.'],
     ['Le tre sale non sono collegate tra loro nella mappa adiacenza: i gruppi multi-tavolo restano dentro la stessa sala.'],
     [''],
@@ -2012,11 +2024,11 @@ function aggiornaPlanimetria() {
   sheet.getRange('C2').setBackground('#fce8b2');
   sheet.getRange('D2').setBackground('#f4c7c3');
 
-  sheet.getRange('A3').setValue('Sala Ballo (blocco sx: 6x3 tavoli | passaggio | blocco dx: 3+3+2+2+2+3)').setFontWeight('bold');
-  sheet.getRange('A22').setValue('Sala Chiosco (fila 5 in basso; sopra tre file 3+3+4)').setFontWeight('bold');
-  sheet.getRange('A30').setValue('Sala Esterna (7 file x 2 tavoli)').setFontWeight('bold');
+  sheet.getRange('A3').setValue('Sala Ballo (blocco sx: 6x3 tavoli | corridoio col. G | blocco dx: 3+3+2+2+2+3)').setFontWeight('bold');
+  sheet.getRange('A22').setValue('Sala Chiosco (tre file verticali 3 | · | 3 | · | 4; riga vuota; fila 5 orizzontale sotto)').setFontWeight('bold');
+  sheet.getRange('A40').setValue('Sala Esterna (7 file x 2 tavoli, prime colonne)').setFontWeight('bold');
 
-  var maxRow = 52;
+  var maxRow = 65;
   for (var rr = 1; rr <= maxRow; rr++) {
     try {
       sheet.setRowHeight(rr, 22);
@@ -2040,7 +2052,7 @@ function aggiornaPlanimetria() {
     rng.setBackground(bg).setBorder(true, true, true, true, false, false, '#333333', SpreadsheetApp.BorderStyle.SOLID);
   }
 
-  sheet.getRange('A' + maxRow).setValue('\u267F = tavolo accessibile (Chiosco 39-41)').setFontSize(9).setFontColor('#666');
+  sheet.getRange('A' + maxRow).setValue('\u267F = tavolo accessibile (Chiosco: fila verticale sinistra 39-41)').setFontSize(9).setFontColor('#666');
 
   SpreadsheetApp.flush();
 }
