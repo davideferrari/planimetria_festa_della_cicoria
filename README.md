@@ -1,10 +1,10 @@
 # Gestione prenotazioni — Festa della cicoria
 
-Sistema di gestione prenotazioni tavoli per la **Festa della cicoria**, basato su **Google Sheets** e **Google Apps Script**. La disposizione dei tavoli e delle sale è modellata sulla planimetria dell’evento (vedi immagine di riferimento sotto).
+Sistema di gestione prenotazioni tavoli per la **Festa della cicoria**, basato su **Google Sheets** e **Google Apps Script**. La numerazione dei tavoli nelle tre sale del foglio **PLANIMETRIA** è allineata alla planimetria CAD dell’area festa (vedi sotto).
 
-![Planimetria Festa della cicoria](Festa_della_cicoria.jpeg)
+![Planimetria Festa della cicoria — layout giorni con attività di ballo](Planimetria_festa_della_cicoria.jpeg)
 
-*Planimetria tecnica di riferimento per l’edizione (aree cucina, chiosco, zona ballo, servizi, date operative, ecc.).*
+*Planimetria ufficiale: **layout nei giorni in cui è prevista l’attività di ballo** (zona ballo con palco, cucina, pizzeria, servizi, flussi). In tavola — edizione **2026**: **25-04** (sera), **30-04**, **01-05** (sera), **02-05** (sera). **Zona ballo**: pedana indicata **115 m²**, capacità indicativa **≈100 persone** in fase ballo.*
 
 ## Struttura del progetto
 
@@ -13,7 +13,7 @@ Sistema di gestione prenotazioni tavoli per la **Festa della cicoria**, basato s
 | `Prenotazioni.gs` | Logica principale: menu, fogli, form, assegnazione tavoli, dashboard, planimetria |
 | `Tests.gs` | Test automatici in memoria (esecuzione da menu o da editor) |
 | `TestGuidato.gs` | Test guidato con sidebar e scenari sulla planimetria reale del foglio |
-| `Festa_della_cicoria.jpeg` | Planimetria dell’area festa (riferimento visivo e logistico) |
+| `Planimetria_festa_della_cicoria.jpeg` | Planimetria CAD aggiornata (layout con ballo, date 2026, metrature zona ballo) |
 
 ## Caratteristiche
 
