@@ -72,7 +72,7 @@ function buildAdiacenzaFesta_() {
   edge(29, 31);
   edge(30, 32);
 
-  // --- Sala Chiosco (34-48): fila 5 in basso + tre file superiori ---
+  // --- Sala Chiosco (34-48): fila 5 in basso (solo tra loro) + tre file superiori (collegate tra loro), senza archi basso↔alto ---
   edge(34, 35);
   edge(35, 36);
   edge(36, 37);
@@ -86,9 +86,6 @@ function buildAdiacenzaFesta_() {
   edge(47, 48);
   edge(41, 42);
   edge(44, 45);
-  edge(34, 39);
-  edge(36, 42);
-  edge(38, 45);
 
   // --- Sala Esterna (49-62): 7 file x 2 tavoli ---
   for (r = 0; r < 7; r++) {
@@ -297,7 +294,7 @@ function creaFoglioIstruzioni_() {
     ['PLANIMETRIA E NUMERAZIONE TAVOLI (62 tavoli totali)'],
     ['Totale geometrico dalla planimetria: 33 (Sala Ballo) + 15 (Sala Chiosco) + 14 (Sala Esterna) = 62.'],
     ['Sala Ballo = tavoli 1-33: blocco sinistro 6 file x 3 tavoli orizzontali (1-18); passaggio; blocco destro 6 file con 3+3+2+2+2+3 tavoli (19-33).'],
-    ['Sala Chiosco = tavoli 34-48: sopra tre file verticali separate da un corridoio (39-41 accessibili; 42-44; 45-48), sotto fila orizzontale adiacente di 5 tavoli (34-38).'],
+    ['Sala Chiosco = tavoli 34-48: sopra tre file verticali (39-41 accessibili; 42-44; 45-48) collegate tra loro; sotto fila orizzontale 34-38 (adiacenti solo in fila). Per gruppi multi-tavolo la fila in basso non è considerata adiacente alle file superiori.'],
     ['Sala Esterna = tavoli 49-62: 7 file, ciascuna con 2 tavoli affiancati orizzontalmente.'],
     ['Le tre sale non sono collegate tra loro nella mappa adiacenza: i gruppi multi-tavolo restano dentro la stessa sala.'],
     [''],
@@ -375,7 +372,8 @@ function creaFoglioIstruzioni_() {
     ['in un tavolo accessibile.'],
     [''],
     ['NOTA: MAPPA ADIACENZA'],
-    ['L\'adiacenza segue file e colonne della planimetria (orizzontale nella fila, verticale tra file consecutive).'],
+    ['L\'adiacenza segue in genere file e colonne (orizzontale nella fila, verticale tra file consecutive).'],
+    ['Eccezione Sala Chiosco: la fila in basso (34-38) è adiacente solo tra loro, non alle tre file superiori (corridoio).'],
     ['I corridoi tra blocchi non collegano tavoli; le tre sale sono grafi separati per i blocchi multi-tavolo.'],
   ];
 
