@@ -225,11 +225,13 @@ function onOpen() {
     .addItem('Cancella Prenotazione', 'mostraFormCancellazione')
     .addItem('Sposta Prenotazione', 'mostraFormSpostamento')
     .addSeparator()
-    .addItem('Ottimizza Tavoli', 'ottimizzaTavoli')
+    .addItem('Consolida tavoli parziali (manuale)', 'ottimizzaTavoli')
     .addItem('Aggiorna Dashboard', 'aggiornaDashboard')
     .addSeparator()
     .addItem('Inizializza Sistema', 'inizializzaSistema')
-    .addItem('Ripara colonna Tavolo (locale / numeri)', 'riparaColonnaTavoloLocale_')
+    .addSeparator()
+    .addItem('Esegui test automatici (Logger)', 'eseguiTestFestaDaMenu')
+    .addItem('Test guidato planimetria (sidebar)', 'mostraTestGuidatoPlanimetria')
     .addToUi();
 }
 
@@ -616,7 +618,8 @@ function calcolaOccupazioneMappaCore_(prenotazioni, indiceEscluso) {
 // ============================================================
 // AGGIORNA TAVOLI IN BATCH
 // ============================================================
-function aggiornaStatoTavoli_(sheetTavoli, tavoli, occupazione) {
+/** Aggiorna colonne occupazione/liberi/stato sulle righe tavoli (senza scrivere sul foglio). */
+function aggiornaRigheTavoliDaOccupazione_(tavoli, occupazione) {
   for (var i = 0; i < tavoli.length; i++) {
     var numTavolo = tavoli[i][1];
     var postiTotali = tavoli[i][2];
@@ -626,6 +629,10 @@ function aggiornaStatoTavoli_(sheetTavoli, tavoli, occupazione) {
     tavoli[i][4] = liberi;
     tavoli[i][6] = occ >= postiTotali ? 'Pieno' : (occ > 0 ? 'Parziale' : 'Libero');
   }
+}
+
+function aggiornaStatoTavoli_(sheetTavoli, tavoli, occupazione) {
+  aggiornaRigheTavoliDaOccupazione_(tavoli, occupazione);
   sheetTavoli.getRange(2, 1, tavoli.length, tavoli[0].length).setValues(tavoli);
 }
 
@@ -1201,13 +1208,136 @@ function tentaRiorganizzazioneMulti_(tavoli, prenotazioni, occupazione, personeR
 // ============================================================
 // APPLICARE SPOSTAMENTI
 // ============================================================
-function applicaSpostamenti_(sheetPren, prenotazioni, spostamenti) {
+function applicaSpostamentiSoloDati_(prenotazioni, spostamenti) {
   for (var i = 0; i < spostamenti.length; i++) {
     var s = spostamenti[i];
     prenotazioni[s.rigaIndice][5] = s.aTavolo;
     prenotazioni[s.rigaIndice][6] = s.aZona;
   }
+}
+
+function applicaSpostamenti_(sheetPren, prenotazioni, spostamenti) {
+  applicaSpostamentiSoloDati_(prenotazioni, spostamenti);
   sheetPren.getRange(2, 1, prenotazioni.length, prenotazioni[0].length).setValues(prenotazioni);
+}
+
+/**
+ * Stato festa in memoria per test / tooling: stessi array del foglio TAVOLI e PRENOTAZIONI.
+ */
+function creaStatoFestaVuoto_() {
+  var tavoli = generaRigheTavoliFesta_().map(function(r) { return r.slice(); });
+  return { tavoli: tavoli, prenotazioni: [] };
+}
+
+/**
+ * Risolve assegnazione tavolo/i per una nuova prenotazione (muta prenotazioni in caso di riorganizzazione).
+ * @return {{ tavoloAssegnato: number|string, zonaAssegnata: string, messaggioExtra: string }}
+ */
+function risolviAssegnazioneNuovaPrenotazione_(tavoli, prenotazioni, persone, disabili) {
+  var occupazione = calcolaOccupazioneMappa_(prenotazioni);
+  var necessitaAccessibile = (disabili === 'Si');
+  var messaggioExtra = '';
+  var tavoloAssegnato = null;
+  var zonaAssegnata = '';
+
+  function dopoRiorg_() {
+    occupazione = calcolaOccupazioneMappa_(prenotazioni);
+    aggiornaRigheTavoliDaOccupazione_(tavoli, occupazione);
+  }
+
+  if (persone <= POSTI_PER_TAVOLO) {
+    var tavolo = trovaMigliorTavolo_(tavoli, occupazione, persone, necessitaAccessibile);
+    var bloccoPiccolo = null;
+
+    if (!tavolo) {
+      var riorg = tentaRiorganizzazione_(tavoli, prenotazioni, occupazione, persone, necessitaAccessibile);
+      if (riorg) {
+        applicaSpostamentiSoloDati_(prenotazioni, riorg.spostamenti);
+        tavolo = riorg.tavolo;
+        var nomiSpostati = riorg.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
+        messaggioExtra = ' [Spostati: ' + nomiSpostati.join(', ') + ']';
+        dopoRiorg_();
+      }
+    }
+
+    if (!tavolo) {
+      bloccoPiccolo = trovaTavoliMultipli_(tavoli, occupazione, persone, necessitaAccessibile);
+    }
+
+    if (!tavolo && !bloccoPiccolo) {
+      var riorgMulti = tentaRiorganizzazioneMulti_(tavoli, prenotazioni, occupazione, persone, necessitaAccessibile);
+      if (riorgMulti) {
+        applicaSpostamentiSoloDati_(prenotazioni, riorgMulti.spostamenti);
+        bloccoPiccolo = riorgMulti.blocco;
+        var nomiM = riorgMulti.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
+        messaggioExtra = (messaggioExtra || '') + ' [Spostati: ' + nomiM.join(', ') + ']';
+        dopoRiorg_();
+      }
+    }
+
+    if (!tavolo && !bloccoPiccolo) {
+      var avanzata = tentaRiorganizzazioneAvanzata_(tavoli, prenotazioni, occupazione, persone, necessitaAccessibile);
+      if (avanzata) {
+        applicaSpostamentiSoloDati_(prenotazioni, avanzata.spostamenti);
+        bloccoPiccolo = avanzata.blocco;
+        var nomiA = avanzata.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
+        messaggioExtra = (messaggioExtra || '') + ' [Spostati: ' + nomiA.join(', ') + ']';
+        dopoRiorg_();
+      }
+    }
+
+    if (tavolo) {
+      tavoloAssegnato = tavolo.tavolo;
+      zonaAssegnata = tavolo.zona;
+    } else if (bloccoPiccolo) {
+      tavoloAssegnato = tavoliToString_(bloccoPiccolo.tavoli);
+      zonaAssegnata = bloccoPiccolo.zona;
+    } else {
+      var postiLib = tavoli.reduce(function(s, t) { return s + t[2] - (occupazione[t[1]] || 0); }, 0);
+      throw new Error('Nessun tavolo (o blocco adiacente) per ' + persone + ' persone' + (necessitaAccessibile ? ' (accessibile)' : '') + '. Posti liberi: ' + postiLib);
+    }
+  } else {
+    var blocco = trovaTavoliMultipli_(tavoli, occupazione, persone, necessitaAccessibile);
+
+    if (!blocco) {
+      var riorgMulti2 = tentaRiorganizzazioneMulti_(tavoli, prenotazioni, occupazione, persone, necessitaAccessibile);
+      if (riorgMulti2) {
+        applicaSpostamentiSoloDati_(prenotazioni, riorgMulti2.spostamenti);
+        blocco = riorgMulti2.blocco;
+        var nomiSpostati2 = riorgMulti2.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
+        messaggioExtra = ' [Spostati: ' + nomiSpostati2.join(', ') + ']';
+        dopoRiorg_();
+      }
+    }
+
+    if (!blocco) {
+      var postiLib2 = tavoli.reduce(function(s, t) { return s + t[2] - (occupazione[t[1]] || 0); }, 0);
+      throw new Error('Nessun blocco di tavoli adiacenti per ' + persone + ' persone' + (necessitaAccessibile ? ' (accessibile)' : '') + '. Posti liberi totali: ' + postiLib2 + ', ma non riorganizzabili.');
+    }
+
+    tavoloAssegnato = tavoliToString_(blocco.tavoli);
+    zonaAssegnata = blocco.zona;
+  }
+
+  return { tavoloAssegnato: tavoloAssegnato, zonaAssegnata: zonaAssegnata, messaggioExtra: messaggioExtra };
+}
+
+/**
+ * Aggiunge una prenotazione in memoria (stesso algoritmo del menu). Aggiorna stato.tavoli.
+ * @return {number} nuovo ID
+ */
+function aggiungiPrenotazioneInMemoria_(stato, nome, telefono, persone, disabili, note) {
+  var r = risolviAssegnazioneNuovaPrenotazione_(stato.tavoli, stato.prenotazioni, persone, disabili);
+  var nuovoId = 1;
+  if (stato.prenotazioni.length > 0) {
+    var ids = stato.prenotazioni.map(function(row) { return row[0]; }).filter(function(v) { return v; });
+    if (ids.length > 0) nuovoId = Math.max.apply(null, ids) + 1;
+  }
+  var nuovaRiga = [nuovoId, nome, telefono, persone, disabili, r.tavoloAssegnato, r.zonaAssegnata, new Date(), 'Confermata', note || ''];
+  stato.prenotazioni.push(nuovaRiga);
+  var nuovaOcc = calcolaOccupazioneMappa_(stato.prenotazioni);
+  aggiornaRigheTavoliDaOccupazione_(stato.tavoli, nuovaOcc);
+  return nuovoId;
 }
 
 // ============================================================
@@ -1298,93 +1428,11 @@ function getHtmlPrenotazione_() {
 // ============================================================
 function aggiungiPrenotazione(nome, telefono, persone, disabili, note) {
   var dati = leggiTuttiIDati_();
-  var occupazione = calcolaOccupazioneMappa_(dati.prenotazioni);
-  var necessitaAccessibile = (disabili === 'Si');
-  var messaggioExtra = '';
-  var tavoloAssegnato = null;
-  var zonaAssegnata = '';
+  var assegn = risolviAssegnazioneNuovaPrenotazione_(dati.tavoli, dati.prenotazioni, persone, disabili);
+  var messaggioExtra = assegn.messaggioExtra;
+  var tavoloAssegnato = assegn.tavoloAssegnato;
+  var zonaAssegnata = assegn.zonaAssegnata;
 
-  if (persone <= POSTI_PER_TAVOLO) {
-    var tavolo = trovaMigliorTavolo_(dati.tavoli, occupazione, persone, necessitaAccessibile);
-    var bloccoPiccolo = null;
-
-    if (!tavolo) {
-      var riorg = tentaRiorganizzazione_(dati.tavoli, dati.prenotazioni, occupazione, persone, necessitaAccessibile);
-      if (riorg) {
-        applicaSpostamenti_(dati.sheetPren, dati.prenotazioni, riorg.spostamenti);
-        tavolo = riorg.tavolo;
-        var nomiSpostati = riorg.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-        messaggioExtra = ' [Spostati: ' + nomiSpostati.join(', ') + ']';
-        occupazione = calcolaOccupazioneMappa_(dati.prenotazioni);
-        aggiornaStatoTavoli_(dati.sheetTavoli, dati.tavoli, occupazione);
-      }
-    }
-
-    if (!tavolo) {
-      bloccoPiccolo = trovaTavoliMultipli_(dati.tavoli, occupazione, persone, necessitaAccessibile);
-    }
-
-    if (!tavolo && !bloccoPiccolo) {
-      var riorgMulti = tentaRiorganizzazioneMulti_(dati.tavoli, dati.prenotazioni, occupazione, persone, necessitaAccessibile);
-      if (riorgMulti) {
-        applicaSpostamenti_(dati.sheetPren, dati.prenotazioni, riorgMulti.spostamenti);
-        bloccoPiccolo = riorgMulti.blocco;
-        var nomiM = riorgMulti.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-        messaggioExtra = (messaggioExtra || '') + ' [Spostati: ' + nomiM.join(', ') + ']';
-        occupazione = calcolaOccupazioneMappa_(dati.prenotazioni);
-        aggiornaStatoTavoli_(dati.sheetTavoli, dati.tavoli, occupazione);
-      }
-    }
-
-    if (!tavolo && !bloccoPiccolo) {
-      var avanzata = tentaRiorganizzazioneAvanzata_(dati.tavoli, dati.prenotazioni, occupazione, persone, necessitaAccessibile);
-      if (avanzata) {
-        applicaSpostamenti_(dati.sheetPren, dati.prenotazioni, avanzata.spostamenti);
-        bloccoPiccolo = avanzata.blocco;
-        var nomiA = avanzata.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-        messaggioExtra = (messaggioExtra || '') + ' [Spostati: ' + nomiA.join(', ') + ']';
-        occupazione = calcolaOccupazioneMappa_(dati.prenotazioni);
-        aggiornaStatoTavoli_(dati.sheetTavoli, dati.tavoli, occupazione);
-      }
-    }
-
-    if (tavolo) {
-      tavoloAssegnato = tavolo.tavolo;
-      zonaAssegnata = tavolo.zona;
-    } else if (bloccoPiccolo) {
-      tavoloAssegnato = tavoliToString_(bloccoPiccolo.tavoli);
-      zonaAssegnata = bloccoPiccolo.zona;
-    } else {
-      var postiLib = dati.tavoli.reduce(function(s, t) { return s + t[2] - (occupazione[t[1]] || 0); }, 0);
-      throw new Error('Nessun tavolo (o blocco adiacente) per ' + persone + ' persone' + (necessitaAccessibile ? ' (accessibile)' : '') + '. Posti liberi: ' + postiLib);
-    }
-
-  } else {
-    // Multi-tavolo
-    var blocco = trovaTavoliMultipli_(dati.tavoli, occupazione, persone, necessitaAccessibile);
-
-    if (!blocco) {
-      var riorgMulti = tentaRiorganizzazioneMulti_(dati.tavoli, dati.prenotazioni, occupazione, persone, necessitaAccessibile);
-      if (riorgMulti) {
-        applicaSpostamenti_(dati.sheetPren, dati.prenotazioni, riorgMulti.spostamenti);
-        blocco = riorgMulti.blocco;
-        var nomiSpostati = riorgMulti.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-        messaggioExtra = ' [Spostati: ' + nomiSpostati.join(', ') + ']';
-        occupazione = calcolaOccupazioneMappa_(dati.prenotazioni);
-        aggiornaStatoTavoli_(dati.sheetTavoli, dati.tavoli, occupazione);
-      }
-    }
-
-    if (!blocco) {
-      var postiLib = dati.tavoli.reduce(function(s, t) { return s + t[2] - (occupazione[t[1]] || 0); }, 0);
-      throw new Error('Nessun blocco di tavoli adiacenti per ' + persone + ' persone' + (necessitaAccessibile ? ' (accessibile)' : '') + '. Posti liberi totali: ' + postiLib + ', ma non riorganizzabili.');
-    }
-
-    tavoloAssegnato = tavoliToString_(blocco.tavoli);
-    zonaAssegnata = blocco.zona;
-  }
-
-  // Calcola nuovo ID
   var nuovoId = 1;
   if (dati.prenotazioni.length > 0) {
     var ids = dati.prenotazioni.map(function(r) { return r[0]; }).filter(function(v) { return v; });
@@ -1464,14 +1512,17 @@ function getHtmlModifica_() {
     + '</script>';
 }
 
-function modificaPrenotazione(id, nuovePersone, disabili, note) {
-  var dati = leggiTuttiIDati_();
+/**
+ * Modifica prenotazione in memoria (stesso algoritmo del form). Aggiorna stato.tavoli.
+ * @return {string} messaggio come modificaPrenotazione
+ */
+function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note) {
   var rigaPren = -1;
   var prenotazione = null;
-
-  for (var i = 0; i < dati.prenotazioni.length; i++) {
-    if (dati.prenotazioni[i][0] === id && dati.prenotazioni[i][8] === 'Confermata') {
-      prenotazione = dati.prenotazioni[i];
+  var i;
+  for (i = 0; i < stato.prenotazioni.length; i++) {
+    if (stato.prenotazioni[i][0] === id && stato.prenotazioni[i][8] === 'Confermata') {
+      prenotazione = stato.prenotazioni[i];
       rigaPren = i;
       break;
     }
@@ -1479,39 +1530,31 @@ function modificaPrenotazione(id, nuovePersone, disabili, note) {
 
   if (!prenotazione) throw new Error('Prenotazione #' + id + ' non trovata o non attiva.');
 
-  var vecchiePersone = prenotazione[3];
   var vecchioTavolo = prenotazione[5];
   var necessitaAccessibile = (disabili === 'Si');
 
-  // Aggiorna i campi semplici
-  dati.prenotazioni[rigaPren][3] = nuovePersone;
-  dati.prenotazioni[rigaPren][4] = disabili;
-  dati.prenotazioni[rigaPren][9] = note;
+  stato.prenotazioni[rigaPren][3] = nuovePersone;
+  stato.prenotazioni[rigaPren][4] = disabili;
+  stato.prenotazioni[rigaPren][9] = note;
 
-  // Verifica se serve riassegnare il tavolo
   var serveCambioTavolo = false;
   var vecchiTavoli = parseTavoli_(vecchioTavolo);
-
-  // Ricalcola occupazione SENZA questa prenotazione per verificare la capienza
-  var occSenza = calcolaOccupazioneSenza_(dati.prenotazioni, rigaPren);
+  var occSenza = calcolaOccupazioneSenza_(stato.prenotazioni, rigaPren);
 
   if (nuovePersone <= POSTI_PER_TAVOLO && vecchiTavoli.length === 1) {
-    // Era singolo, resta singolo: verifica che ci stia ancora
-    var liberiVecchio = dati.tavoli.reduce(function(lib, t) {
+    var liberiVecchio = stato.tavoli.reduce(function(lib, t) {
       if (t[1] === vecchiTavoli[0]) return t[2] - (occSenza[t[1]] || 0);
       return lib;
     }, 0);
 
     var vecchioAccessibile = false;
-    for (var t = 0; t < dati.tavoli.length; t++) {
-      if (dati.tavoli[t][1] === vecchiTavoli[0]) { vecchioAccessibile = dati.tavoli[t][5] === 'Si'; break; }
+    for (var t = 0; t < stato.tavoli.length; t++) {
+      if (stato.tavoli[t][1] === vecchiTavoli[0]) { vecchioAccessibile = stato.tavoli[t][5] === 'Si'; break; }
     }
 
     if (liberiVecchio < nuovePersone) serveCambioTavolo = true;
     if (necessitaAccessibile && !vecchioAccessibile) serveCambioTavolo = true;
-
   } else if (nuovePersone > POSTI_PER_TAVOLO || vecchiTavoli.length > 1) {
-    // Serve multi-tavolo, o era gia multi-tavolo: riassegna
     serveCambioTavolo = true;
   }
 
@@ -1519,76 +1562,80 @@ function modificaPrenotazione(id, nuovePersone, disabili, note) {
 
   if (serveCambioTavolo) {
     if (nuovePersone <= POSTI_PER_TAVOLO) {
-      var nuovoTavolo = trovaMigliorTavolo_(dati.tavoli, occSenza, nuovePersone, necessitaAccessibile);
+      var nuovoTavolo = trovaMigliorTavolo_(stato.tavoli, occSenza, nuovePersone, necessitaAccessibile);
       var bloccoPiccoloM = null;
       if (!nuovoTavolo) {
-        var riorg = tentaRiorganizzazione_(dati.tavoli, dati.prenotazioni, occSenza, nuovePersone, necessitaAccessibile);
+        var riorg = tentaRiorganizzazione_(stato.tavoli, stato.prenotazioni, occSenza, nuovePersone, necessitaAccessibile);
         if (riorg) {
-          applicaSpostamenti_(dati.sheetPren, dati.prenotazioni, riorg.spostamenti);
+          applicaSpostamentiSoloDati_(stato.prenotazioni, riorg.spostamenti);
           nuovoTavolo = riorg.tavolo;
           var nomiSp = riorg.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
           messaggioCambio += ' [Spostati: ' + nomiSp.join(', ') + ']';
         }
       }
       if (!nuovoTavolo) {
-        bloccoPiccoloM = trovaTavoliMultipli_(dati.tavoli, occSenza, nuovePersone, necessitaAccessibile);
+        bloccoPiccoloM = trovaTavoliMultipli_(stato.tavoli, occSenza, nuovePersone, necessitaAccessibile);
       }
       if (!nuovoTavolo && !bloccoPiccoloM) {
-        var riorgMultiM = tentaRiorganizzazioneMulti_(dati.tavoli, dati.prenotazioni, occSenza, nuovePersone, necessitaAccessibile);
+        var riorgMultiM = tentaRiorganizzazioneMulti_(stato.tavoli, stato.prenotazioni, occSenza, nuovePersone, necessitaAccessibile);
         if (riorgMultiM) {
-          applicaSpostamenti_(dati.sheetPren, dati.prenotazioni, riorgMultiM.spostamenti);
+          applicaSpostamentiSoloDati_(stato.prenotazioni, riorgMultiM.spostamenti);
           bloccoPiccoloM = riorgMultiM.blocco;
           var nomiM = riorgMultiM.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
           messaggioCambio += ' [Spostati: ' + nomiM.join(', ') + ']';
         }
       }
       if (!nuovoTavolo && !bloccoPiccoloM) {
-        var avanzataM = tentaRiorganizzazioneAvanzata_(dati.tavoli, dati.prenotazioni, occSenza, nuovePersone, necessitaAccessibile);
+        var avanzataM = tentaRiorganizzazioneAvanzata_(stato.tavoli, stato.prenotazioni, occSenza, nuovePersone, necessitaAccessibile);
         if (avanzataM) {
-          applicaSpostamenti_(dati.sheetPren, dati.prenotazioni, avanzataM.spostamenti);
+          applicaSpostamentiSoloDati_(stato.prenotazioni, avanzataM.spostamenti);
           bloccoPiccoloM = avanzataM.blocco;
           var nomiA = avanzataM.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
           messaggioCambio += ' [Spostati: ' + nomiA.join(', ') + ']';
         }
       }
       if (nuovoTavolo) {
-        dati.prenotazioni[rigaPren][5] = nuovoTavolo.tavolo;
-        dati.prenotazioni[rigaPren][6] = nuovoTavolo.zona;
+        stato.prenotazioni[rigaPren][5] = nuovoTavolo.tavolo;
+        stato.prenotazioni[rigaPren][6] = nuovoTavolo.zona;
         messaggioCambio = ' Tavolo cambiato: T.' + etichettaTavoliVisiva_(vecchioTavolo) + ' -> T.' + etichettaTavoliVisiva_(nuovoTavolo.tavolo) + '.' + messaggioCambio;
       } else if (bloccoPiccoloM) {
-        dati.prenotazioni[rigaPren][5] = tavoliToString_(bloccoPiccoloM.tavoli);
-        dati.prenotazioni[rigaPren][6] = bloccoPiccoloM.zona;
+        stato.prenotazioni[rigaPren][5] = tavoliToString_(bloccoPiccoloM.tavoli);
+        stato.prenotazioni[rigaPren][6] = bloccoPiccoloM.zona;
         messaggioCambio = ' Tavoli cambiati: T.' + etichettaTavoliVisiva_(vecchioTavolo) + ' -> T.' + etichettaTavoliVisiva_(bloccoPiccoloM.tavoli) + '.' + messaggioCambio;
       } else {
         throw new Error('Nessun tavolo (o blocco adiacente) disponibile per ' + nuovePersone + ' persone.');
       }
     } else {
-      var blocco = trovaTavoliMultipli_(dati.tavoli, occSenza, nuovePersone, necessitaAccessibile);
+      var blocco = trovaTavoliMultipli_(stato.tavoli, occSenza, nuovePersone, necessitaAccessibile);
       if (!blocco) {
-        var riorgMulti = tentaRiorganizzazioneMulti_(dati.tavoli, dati.prenotazioni, occSenza, nuovePersone, necessitaAccessibile);
+        var riorgMulti = tentaRiorganizzazioneMulti_(stato.tavoli, stato.prenotazioni, occSenza, nuovePersone, necessitaAccessibile);
         if (riorgMulti) {
-          applicaSpostamenti_(dati.sheetPren, dati.prenotazioni, riorgMulti.spostamenti);
+          applicaSpostamentiSoloDati_(stato.prenotazioni, riorgMulti.spostamenti);
           blocco = riorgMulti.blocco;
-          var nomiSp = riorgMulti.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-          messaggioCambio += ' [Spostati: ' + nomiSp.join(', ') + ']';
+          var nomiSp2 = riorgMulti.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
+          messaggioCambio += ' [Spostati: ' + nomiSp2.join(', ') + ']';
         }
       }
       if (!blocco) throw new Error('Nessun blocco di tavoli adiacenti per ' + nuovePersone + ' persone.');
-      dati.prenotazioni[rigaPren][5] = tavoliToString_(blocco.tavoli);
-      dati.prenotazioni[rigaPren][6] = blocco.zona;
+      stato.prenotazioni[rigaPren][5] = tavoliToString_(blocco.tavoli);
+      stato.prenotazioni[rigaPren][6] = blocco.zona;
       messaggioCambio = ' Tavoli cambiati: T.' + etichettaTavoliVisiva_(vecchioTavolo) + ' -> T.' + etichettaTavoliVisiva_(blocco.tavoli) + '.' + messaggioCambio;
     }
   }
 
-  // Scrivi tutto
-  dati.sheetPren.getRange(2, 1, dati.prenotazioni.length, dati.prenotazioni[0].length).setValues(dati.prenotazioni);
+  aggiornaRigheTavoliDaOccupazione_(stato.tavoli, calcolaOccupazioneMappa_(stato.prenotazioni));
+  return 'Prenotazione #' + id + ' modificata: ' + nuovePersone + ' persone, disabili: ' + disabili + '.' + messaggioCambio;
+}
 
+function modificaPrenotazione(id, nuovePersone, disabili, note) {
+  var dati = leggiTuttiIDati_();
+  var msg = modificaPrenotazioneInMemoria_({ tavoli: dati.tavoli, prenotazioni: dati.prenotazioni }, id, nuovePersone, disabili, note);
+  dati.sheetPren.getRange(2, 1, dati.prenotazioni.length, dati.prenotazioni[0].length).setValues(dati.prenotazioni);
   var nuovaOcc = calcolaOccupazioneMappa_(dati.prenotazioni);
   aggiornaStatoTavoli_(dati.sheetTavoli, dati.tavoli, nuovaOcc);
   aggiornaDashboard();
   aggiornaPlanimetria();
-
-  return 'Prenotazione #' + id + ' modificata: ' + nuovePersone + ' persone, disabili: ' + disabili + '.' + messaggioCambio;
+  return msg;
 }
 
 // Calcola occupazione escludendo una prenotazione specifica
