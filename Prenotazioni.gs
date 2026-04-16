@@ -230,7 +230,6 @@ function onOpen() {
     .addSeparator()
     .addItem('Inizializza Sistema', 'inizializzaSistema')
     .addSeparator()
-    .addItem('Esegui test automatici (Logger)', 'eseguiTestFestaDaMenu')
     .addItem('Test guidato planimetria (sidebar)', 'mostraTestGuidatoPlanimetria')
     .addToUi();
 }
@@ -238,15 +237,47 @@ function onOpen() {
 // ============================================================
 // INIZIALIZZAZIONE
 // ============================================================
-function inizializzaSistema() {
-  const ui = SpreadsheetApp.getUi();
-  const risposta = ui.alert(
-    'Inizializzazione',
-    'Questo creerà ' + TOTALE_TAVOLI + ' tavoli (planimetria festa). I dati esistenti verranno sovrascritti. Continuare?',
-    ui.ButtonSet.YES_NO
-  );
-  if (risposta !== ui.Button.YES) return;
 
+/** Modale foglio (stile coerente con conferme nativa): avviso in grassetto + pulsanti. */
+function getHtmlModaleInizializzaSistema_() {
+  return (
+    '<!DOCTYPE html><html><head><base target="_top"><meta charset="utf-8">'
+    + '<style>'
+    + 'body { font-family: Roboto, Arial, sans-serif; padding: 20px; margin: 0; font-size: 14px; line-height: 1.5; color: #202124; }'
+    + 'h2 { font-size: 16px; font-weight: 500; margin: 0 0 12px; color: #202124; }'
+    + 'p { margin: 0 0 10px; }'
+    + '.att { font-weight: 700; color: #b06000; margin: 12px 0; }'
+    + '.azioni { margin-top: 20px; text-align: right; }'
+    + 'button { font-size: 14px; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-left: 8px; }'
+    + '.sec { background: #fff; border: 1px solid #dadce0; color: #1a73e8; }'
+    + '.pri { background: #1a73e8; border: 1px solid #1a73e8; color: #fff; }'
+    + '</style></head><body>'
+    + '<h2>Inizializzazione</h2>'
+    + '<p>Questo creerà <strong>' +
+    TOTALE_TAVOLI +
+    '</strong> tavoli (planimetria festa).</p>'
+    + '<p class="att">ATTENZIONE SE CLICCHI SI CANCELLI TUTTE LE PRENOTAZIONI E LE PERDI PER SEMPRE</p>'
+    + '<p>I dati esistenti verranno sovrascritti. Continuare?</p>'
+    + '<div class="azioni">'
+    + '<button type="button" class="sec" onclick="google.script.host.close()">No</button>'
+    + '<button type="button" class="pri" onclick="prosegui()">Sì</button>'
+    + '</div>'
+    + '<script>'
+    + 'function prosegui() {'
+    + '  google.script.host.close();'
+    + '  google.script.run.inizializzaSistemaEsegue();'
+    + '}'
+    + '</script></body></html>'
+  );
+}
+
+function inizializzaSistema() {
+  const html = HtmlService.createHtmlOutput(getHtmlModaleInizializzaSistema_()).setWidth(520).setHeight(320);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Inizializzazione');
+}
+
+function inizializzaSistemaEsegue() {
+  SpreadsheetApp.getActive().toast('Inizializzazione in corso…', 'Prenotazioni', 5);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // --- FOGLIO TAVOLI ---
@@ -276,9 +307,16 @@ function inizializzaSistema() {
   aggiornaPlanimetria();
   creaFoglioIstruzioni_();
 
-  ui.alert('Sistema inizializzato con ' + TOTALE_TAVOLI + ' tavoli.\n\n' +
-           'Sala Ballo: 1-33 | Chiosco: 34-48 (39-41 accessibili) | Esterna: 49-62\n\n' +
-           'Totale posti: ' + (TOTALE_TAVOLI * POSTI_PER_TAVOLO));
+  SpreadsheetApp.getUi().alert(
+    'Sistema inizializzato',
+    'Sistema inizializzato con ' +
+      TOTALE_TAVOLI +
+      ' tavoli.\n\n' +
+      'Sala Ballo: 1-33 | Chiosco: 34-48 (39-41 accessibili) | Esterna: 49-62\n\n' +
+      'Totale posti: ' +
+      TOTALE_TAVOLI * POSTI_PER_TAVOLO,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 // ============================================================
@@ -1533,6 +1571,13 @@ function modificaCercaPerId(id) {
   for (i = 0; i < dati.prenotazioni.length; i++) {
     var r = dati.prenotazioni[i];
     if (r[0] === idN && r[8] === 'Confermata') {
+      var dataRaw = r[7];
+      var dataLabel = '';
+      if (dataRaw instanceof Date && !isNaN(dataRaw.getTime())) {
+        dataLabel = Utilities.formatDate(dataRaw, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+      } else if (dataRaw != null && dataRaw !== '') {
+        dataLabel = String(dataRaw);
+      }
       return {
         ok: true,
         id: r[0],
@@ -1542,7 +1587,9 @@ function modificaCercaPerId(id) {
         disabili: r[4],
         note: r[9] != null ? String(r[9]) : '',
         tavolo: r[5],
-        zona: r[6]
+        zona: r[6],
+        dataPren: dataLabel,
+        stato: r[8]
       };
     }
   }
@@ -1886,41 +1933,142 @@ function calcolaOccupazioneSenza_(prenotazioni, indiceDaEscludere) {
 // ============================================================
 function mostraFormCancellazione() {
   var html = HtmlService.createHtmlOutput(getHtmlCancellazione_())
-    .setWidth(420).setHeight(350).setTitle('Cancella Prenotazione');
+    .setWidth(420).setHeight(680).setTitle('Cancella Prenotazione');
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
 function getHtmlCancellazione_() {
   return '<style>'
     + 'body { font-family: Arial, sans-serif; padding: 15px; margin: 0; }'
+    + 'h3 { font-size: 15px; margin: 0 0 10px; color: #333; }'
     + 'label { display: block; margin-top: 12px; font-weight: bold; font-size: 14px; }'
+    + 'label.inline { font-weight: normal; margin-top: 8px; }'
     + 'input { width: 100%; padding: 10px; margin-top: 4px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }'
-    + '.btn { margin-top: 20px; padding: 14px 24px; font-size: 16px; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; }'
+    + '.meta { font-size: 12px; color: #555; margin: 4px 0 0; line-height: 1.45; }'
+    + '.riquadro { background: #fafafa; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; margin-top: 8px; }'
+    + '.riquadro .meta strong { color: #333; }'
+    + '.btn { margin-top: 12px; padding: 12px 20px; font-size: 15px; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; }'
+    + '.btn-cerca { background-color: #1976d2; margin-top: 16px; }'
+    + '.btn-cerca:hover:not(:disabled) { background-color: #1565c0; }'
     + '.btn-canc { background-color: #dc3545; }'
     + '.btn-canc:hover:not(:disabled) { background-color: #c82333; }'
-    + '.btn-canc:disabled { background-color: #999; cursor: wait; }'
-    + '#risultato { margin-top: 15px; padding: 12px; border-radius: 6px; font-size: 14px; display: none; line-height: 1.5; }'
+    + '.btn-secondario { background-color: #eceff1; color: #333; margin-top: 8px; }'
+    + '.btn-secondario:hover:not(:disabled) { background-color: #dfe3e6; }'
+    + '.btn:disabled { background-color: #999; cursor: wait; color: #fff; }'
+    + '#risultato { margin-top: 12px; padding: 12px; border-radius: 6px; font-size: 14px; display: none; line-height: 1.5; }'
+    + '#boxAmbiguo { margin-top: 12px; padding: 12px; border-radius: 6px; font-size: 13px; display: none; line-height: 1.5; }'
     + '.successo { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }'
     + '.errore { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }'
+    + '.avviso { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }'
     + '.spinner { display: inline-block; width: 16px; height: 16px; border: 3px solid #fff; border-top-color: transparent;'
     + '  border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }'
     + '@keyframes spin { to { transform: rotate(360deg); } }'
+    + '.sezione { border-top: 1px solid #e0e0e0; margin-top: 14px; padding-top: 12px; }'
+    + '.nascosto { display: none; }'
     + '</style>'
-    + '<label>ID Prenotazione da cancellare:</label>'
-    + '<input type="number" id="idPren" min="1" placeholder="Es: 3">'
-    + '<button class="btn btn-canc" id="btnCancella" onclick="cancella()">CANCELLA PRENOTAZIONE</button>'
+    + '<h3>1 — Trova la prenotazione</h3>'
+    + '<label class="inline"><input type="radio" name="tipoCercaCan" value="id" checked onchange="toggleTipoCercaCan()"> Per ID</label>'
+    + '<label class="inline"><input type="radio" name="tipoCercaCan" value="nome" onchange="toggleTipoCercaCan()"> Per nome e numero persone</label>'
+    + '<div id="boxIdCan">'
+    + '<label>ID prenotazione</label>'
+    + '<input type="number" id="idCercaCan" min="1" placeholder="Es: 12">'
+    + '</div>'
+    + '<div id="boxNomeCan" class="nascosto">'
+    + '<label>Nome (come in elenco)</label>'
+    + '<input type="text" id="nomeCercaCan" placeholder="Es: Mario Rossi" autocomplete="off">'
+    + '<label>Numero persone</label>'
+    + '<input type="number" id="persCercaCan" min="1" placeholder="Es: 4">'
+    + '</div>'
+    + '<button type="button" class="btn btn-cerca" id="btnCercaCan" onclick="cercaPrenotazioneCanc()">Cerca</button>'
+    + '<div id="boxAmbiguo" class="avviso"></div>'
+    + '<div id="sezioneDettaglio" class="sezione nascosto">'
+    + '<h3>2 — Dettaglio e cancellazione</h3>'
+    + '<div class="riquadro">'
+    + '<p class="meta"><strong>ID</strong> <span id="lblIdCan"></span></p>'
+    + '<p class="meta"><strong>Nome</strong> <span id="lblNomeCan"></span></p>'
+    + '<p class="meta"><strong>Persone</strong> <span id="lblPersoneCan"></span></p>'
+    + '<p class="meta"><strong>Telefono</strong> <span id="lblTelCan"></span></p>'
+    + '<p class="meta"><strong>Tavolo</strong> <span id="lblTavCan"></span></p>'
+    + '<p class="meta"><strong>Zona</strong> <span id="lblZonaCan"></span></p>'
+    + '<p class="meta"><strong>Disabili</strong> <span id="lblDisCan"></span></p>'
+    + '<p class="meta"><strong>Data</strong> <span id="lblDataCan"></span></p>'
+    + '<p class="meta"><strong>Stato</strong> <span id="lblStatoCan"></span></p>'
+    + '<p class="meta"><strong>Note</strong> <span id="lblNoteCan" style="white-space:pre-wrap"></span></p>'
+    + '</div>'
+    + '<input type="hidden" id="idPrenCan">'
+    + '<button type="button" class="btn btn-canc" id="btnCancella" onclick="cancellaConferma()">CANCELLA PRENOTAZIONE</button>'
+    + '<button type="button" class="btn btn-secondario" id="btnResetCan" onclick="resetFormCanc()">Nuova ricerca</button>'
+    + '</div>'
     + '<div id="risultato"></div>'
     + '<script>'
-    + 'function cancella() {'
-    + '  var id = parseInt(document.getElementById("idPren").value);'
-    + '  if (!id) { mostraRisultato("Inserisci un ID valido.", "errore"); return; }'
-    + '  setLoading(true);'
-    + '  google.script.run'
-    + '    .withSuccessHandler(function(msg) { mostraRisultato(msg, "successo"); setLoading(false); document.getElementById("idPren").value = ""; })'
-    + '    .withFailureHandler(function(err) { mostraRisultato(err.message, "errore"); setLoading(false); })'
-    + '    .cancellaPrenotazione(id);'
+    + 'function toggleTipoCercaCan() {'
+    + '  var perNome = document.querySelector("input[name=tipoCercaCan]:checked").value === "nome";'
+    + '  document.getElementById("boxIdCan").className = perNome ? "nascosto" : "";'
+    + '  document.getElementById("boxNomeCan").className = perNome ? "" : "nascosto";'
     + '}'
-    + 'function setLoading(on) { var b = document.getElementById("btnCancella"); b.disabled = on;'
+    + 'function cercaPrenotazioneCanc() {'
+    + '  document.getElementById("boxAmbiguo").style.display = "none";'
+    + '  document.getElementById("sezioneDettaglio").className = "sezione nascosto";'
+    + '  var tipo = document.querySelector("input[name=tipoCercaCan]:checked").value;'
+    + '  var b = document.getElementById("btnCercaCan"); b.disabled = true;'
+    + '  var prev = b.textContent; b.textContent = "Ricerca…";'
+    + '  function fine() { b.disabled = false; b.textContent = prev; }'
+    + '  if (tipo === "id") {'
+    + '    var id = parseInt(document.getElementById("idCercaCan").value, 10);'
+    + '    if (!id) { fine(); mostraRisultato("Inserisci un ID valido.", "errore"); return; }'
+    + '    google.script.run.withSuccessHandler(function(r) { fine(); applicaRisultatoCercaCanc(r); })'
+    + '      .withFailureHandler(function(err) { fine(); mostraRisultato(err.message, "errore"); })'
+    + '      .modificaCercaPerId(id);'
+    + '    return;'
+    + '  }'
+    + '  var nome = document.getElementById("nomeCercaCan").value.trim();'
+    + '  var pers = document.getElementById("persCercaCan").value;'
+    + '  google.script.run.withSuccessHandler(function(r) { fine(); applicaRisultatoCercaCanc(r); })'
+    + '    .withFailureHandler(function(err) { fine(); mostraRisultato(err.message, "errore"); })'
+    + '    .modificaCercaPerNomePersone(nome, pers);'
+    + '}'
+    + 'function applicaRisultatoCercaCanc(r) {'
+    + '  nascondiRisultatoCanc();'
+    + '  if (r.ambiguo) {'
+    + '    var box = document.getElementById("boxAmbiguo");'
+    + '    box.style.display = "block";'
+    + '    box.textContent = r.messaggio || "Piu risultati: usa la ricerca per ID.";'
+    + '    return;'
+    + '  }'
+    + '  if (!r.ok) {'
+    + '    mostraRisultato(r.messaggio || "Ricerca senza esito.", "errore");'
+    + '    return;'
+    + '  }'
+    + '  document.getElementById("idPrenCan").value = r.id;'
+    + '  document.getElementById("lblIdCan").textContent = r.id;'
+    + '  document.getElementById("lblNomeCan").textContent = r.nome || "";'
+    + '  document.getElementById("lblPersoneCan").textContent = r.persone != null ? String(r.persone) : "";'
+    + '  document.getElementById("lblTelCan").textContent = r.telefono || "";'
+    + '  document.getElementById("lblTavCan").textContent = r.tavolo != null ? String(r.tavolo) : "";'
+    + '  document.getElementById("lblZonaCan").textContent = r.zona != null ? String(r.zona) : "";'
+    + '  document.getElementById("lblDisCan").textContent = r.disabili === "Si" ? "Si" : "No";'
+    + '  document.getElementById("lblDataCan").textContent = r.dataPren || "";'
+    + '  document.getElementById("lblStatoCan").textContent = r.stato || "";'
+    + '  document.getElementById("lblNoteCan").textContent = r.note || "";'
+    + '  document.getElementById("sezioneDettaglio").className = "sezione";'
+    + '}'
+    + 'function resetFormCanc() {'
+    + '  document.getElementById("sezioneDettaglio").className = "sezione nascosto";'
+    + '  document.getElementById("boxAmbiguo").style.display = "none";'
+    + '  nascondiRisultatoCanc();'
+    + '}'
+    + 'function nascondiRisultatoCanc() {'
+    + '  var d = document.getElementById("risultato"); d.style.display = "none"; d.textContent = "";'
+    + '}'
+    + 'function cancellaConferma() {'
+    + '  var id = parseInt(document.getElementById("idPrenCan").value, 10);'
+    + '  if (!id) { mostraRisultato("Cerca prima una prenotazione.", "errore"); return; }'
+    + '  nascondiRisultatoCanc();'
+    + '  google.script.run'
+    + '    .withFailureHandler(function(err) { mostraRisultato(err.message, "errore"); })'
+    + '    .mostraModaleConfermaCancellazione(id);'
+    + '}'
+    + 'function setLoadingCanc(on) { var b = document.getElementById("btnCancella"); b.disabled = on;'
     + '  b.innerHTML = on ? \'<span class="spinner"></span>Cancellazione...\' : "CANCELLA PRENOTAZIONE"; }'
     + 'function mostraRisultato(msg, tipo) { var d = document.getElementById("risultato");'
     + '  d.textContent = msg; d.className = tipo; d.style.display = "block"; }'
@@ -1948,6 +2096,70 @@ function cancellaPrenotazione(id) {
   aggiornaPlanimetria();
 
   return 'Prenotazione #' + id + ' (' + nomePren + ') cancellata.';
+}
+
+/**
+ * Chiamata dalla modale (nome senza _ = esposta a google.script.run).
+ * La modale chiude prima di invocare questa funzione: qui mostriamo toast di avanzamento.
+ */
+function cancellaPrenotazioneDaModale(id) {
+  var tid = parseInt(id, 10);
+  if (!tid || tid < 1) {
+    SpreadsheetApp.getUi().alert('Errore', 'ID non valido.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  try {
+    SpreadsheetApp.getActive().toast('Cancellazione in corso…', 'Prenotazioni', 5);
+    var msg = cancellaPrenotazione(tid);
+    SpreadsheetApp.getActive().toast(msg, 'Cancellazione', 12);
+    return msg;
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('Cancellazione', String(e.message || e), SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/** Modale foglio (stile allineato a inizializza sistema). id = intero. */
+function getHtmlModaleCancellazione_(id) {
+  var idN = parseInt(id, 10);
+  return (
+    '<!DOCTYPE html><html><head><base target="_top"><meta charset="utf-8">'
+    + '<style>'
+    + 'body { font-family: Roboto, Arial, sans-serif; padding: 20px; margin: 0; font-size: 14px; line-height: 1.5; color: #202124; }'
+    + 'h2 { font-size: 16px; font-weight: 500; margin: 0 0 12px; color: #202124; }'
+    + 'p { margin: 0 0 10px; }'
+    + '.att { font-weight: 700; color: #b06000; margin: 12px 0; }'
+    + '.azioni { margin-top: 20px; text-align: right; }'
+    + 'button { font-size: 14px; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-left: 8px; }'
+    + '.sec { background: #fff; border: 1px solid #dadce0; color: #1a73e8; }'
+    + '.pri { background: #dc3545; border: 1px solid #dc3545; color: #fff; }'
+    + '</style></head><body>'
+    + '<h2>Conferma cancellazione</h2>'
+    + '<p class="att">Sei sicuro?</p>'
+    + '<p>Stai per cancellare la prenotazione <strong>#' +
+    idN +
+    '</strong>. L’operazione non è annullabile dal menu.</p>'
+    + '<div class="azioni">'
+    + '<button type="button" class="sec" onclick="google.script.host.close()">No</button>'
+    + '<button type="button" class="pri" onclick="confermaCanc()">Sì, cancella</button>'
+    + '</div>'
+    + '<script>'
+    + 'function confermaCanc() {'
+    + '  google.script.host.close();'
+    + '  google.script.run'
+    + '    .withFailureHandler(function(e) { alert(e.message || e); })'
+    + '    .cancellaPrenotazioneDaModale(' +
+    idN +
+    ');'
+    + '}'
+    + '</script></body></html>'
+  );
+}
+
+function mostraModaleConfermaCancellazione(id) {
+  var idN = parseInt(id, 10);
+  if (!idN || idN < 1) throw new Error('ID non valido.');
+  var html = HtmlService.createHtmlOutput(getHtmlModaleCancellazione_(idN)).setWidth(480).setHeight(280);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Conferma cancellazione');
 }
 
 // ============================================================

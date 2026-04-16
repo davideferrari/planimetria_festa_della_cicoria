@@ -24,7 +24,7 @@ Sistema di gestione prenotazioni tavoli per la **Festa della cicoria**, basato s
 - Adiacenza tra tavoli definita per gruppi multi-tavolo; le tre sale **non** sono collegate tra loro nella mappa
 - Foglio **PLANIMETRIA** aggiornato con lo stato delle prenotazioni
 - Foglio **ISTRUZIONI** generato in fase di inizializzazione
-- **Test automatici** (Logger) e **test guidato** (sidebar) per verifiche e dimostrazioni
+- **Test automatici** eseguibili dall’editor Apps Script (`Tests.gs`) e **test guidato** dal menu (sidebar) per verifiche e dimostrazioni
 
 ## Installazione
 
@@ -47,7 +47,7 @@ Sistema di gestione prenotazioni tavoli per la **Festa della cicoria**, basato s
 
 1. Ricarica il foglio (**F5**)
 2. Compare il menu **Gestione Fiera**
-3. **Gestione Fiera** → **Inizializza Sistema**
+3. **Gestione Fiera** → **Inizializza Sistema**: si apre una **finestra di conferma** sul foglio (non nella sidebar) con un avviso in **grassetto** sulle prenotazioni esistenti; conferma solo se è davvero quanto intendi.
 4. Alla prima esecuzione autorizza lo script quando richiesto
 5. Vengono creati/aggiornati i fogli **TAVOLI**, **PRENOTAZIONI**, **DASHBOARD**, **PLANIMETRIA**, **ISTRUZIONI**
 
@@ -63,7 +63,6 @@ Sistema di gestione prenotazioni tavoli per la **Festa della cicoria**, basato s
 | Ottimizzazione manuale (consolidamento) | Consolida tavoli parziali (manuale) |
 | Aggiornare riepilogo | Aggiorna Dashboard |
 | Reset completo dati tavoli/prenotazioni (conferma) | Inizializza Sistema |
-| Test in memoria | Esegui test automatici (Logger) |
 | Scenari sulla planimetria | Test guidato planimetria (sidebar) |
 
 ### Modifica prenotazione
@@ -71,6 +70,10 @@ Sistema di gestione prenotazioni tavoli per la **Festa della cicoria**, basato s
 1. **Cerca** la prenotazione: **per ID** (foglio PRENOTAZIONI) oppure **per nome e numero di persone** (nome come in elenco, confronto senza distinzione maiuscole/minuscole).
 2. Se **più prenotazioni** hanno lo stesso nome e lo stesso numero di persone, compare un avviso con gli **ID** coinvolti: ripeti la ricerca **per ID** scegliendo la riga giusta.
 3. Si aprono i campi **persone**, **telefono**, **disabili**, **note**: modifica ciò che serve e conferma con **Modifica prenotazione**. Puoi usare **Nuova ricerca** per ripartire dall’inizio.
+
+### Cancellazione prenotazione
+
+Stessa **ricerca** della modifica (per **ID** o **nome + persone**; in caso di ambiguità, usa l’**ID**). Dopo la ricerca vedi il **riepilogo completo** della prenotazione; **Cancella prenotazione** apre una **finestra di conferma** sul foglio (stesso tipo di dialogo dell’inizializzazione), con **Sei sicuro?** in evidenza; dopo la conferma compare un **messaggio in basso sul foglio** (toast) con l’esito.
 
 ## Come funziona l’ottimizzazione
 
