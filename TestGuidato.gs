@@ -62,6 +62,12 @@ function getElencoScenariGuidato() {
       id: 'inserimenti_modifica_cancella_completo',
       titolo: '4 — Inserimenti + modifiche + cancellazioni, poi riempimento totale',
       desc: 'Scenario misto su pochi tavoli, poi riempimento batch come nello scenario 1.'
+    },
+    {
+      id: 'finale_libero',
+      titolo: '5 — FINALE: azioni libere (random)',
+      desc:
+        'Cinque azioni su richiesta: inserimento 1–8 o oltre 8 persone (senza disabili), modifica o cancellazione casuali su prenotazioni create qui; Fine per chiudere. Etichetta dopo ogni click.'
     }
   ];
 }
@@ -305,7 +311,123 @@ function getTestGuidatoPassiScenario_(scenarioId) {
     ];
   }
 
+  if (scenarioId === 'finale_libero') {
+    return [
+      {
+        tipo: 'finaleLibero',
+        titolo: 'Scenario FINALE — azioni libere',
+        testo:
+          'Ogni tasto esegue un’azione con valori <b>casuali</b> (nessun inserimento con disabili). ' +
+          'Le modifiche e le cancellazioni usano le prenotazioni create in questa sessione (ID tracciati). ' +
+          'Dopo ogni azione compare un riepilogo nella casella sotto.',
+        verifica: 'PLANIMETRIA e PRENOTAZIONI aggiornati; ripeti le azioni che ti servono per coprire tutti i casi.'
+      }
+    ];
+  }
+
   throw new Error('Scenario sconosciuto: ' + scenarioId);
+}
+
+/**
+ * Prenotazioni Confermate tra gli ID passati dal client (sessione test FINALE).
+ * @param {number[]} ids
+ * @return {{ id: number, persone: number }[]}
+ */
+function tgPrenotazioniConfermateDaIds_(ids) {
+  var dati = leggiTuttiIDati_();
+  var out = [];
+  var i;
+  var j;
+  for (i = 0; i < ids.length; i++) {
+    var want = ids[i];
+    for (j = 0; j < dati.prenotazioni.length; j++) {
+      var r = dati.prenotazioni[j];
+      if (r[0] === want && r[8] === 'Confermata') {
+        out.push({ id: want, persone: r[3] });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {string} azione 'add1_8' | 'add9plus' | 'modifica' | 'cancella'
+ * @param {{ ids: number[], scenarioId: string }} contesto
+ */
+function testGuidatoEseguiAzioneFinale(azione, contesto) {
+  contesto = contesto || {};
+  var ids = contesto.ids || [];
+  var note = TG_PREFISSO_NOTE_ + ' FINALE';
+
+  if (azione === 'add1_8') {
+    var p1 = 1 + Math.floor(Math.random() * 8);
+    var nome1 = 'TG Fin ' + Utilities.getUuid().slice(0, 8);
+    var tel1 = '997' + ('0000000' + Math.floor(Math.random() * 10000000)).slice(-7);
+    var msg1 = aggiungiPrenotazione(nome1, tel1, p1, 'No', note);
+    var m1 = msg1.match(/#(\d+)/);
+    var nuovo1 = m1 ? parseInt(m1[1], 10) : null;
+    focusFoglioPlanimetria_();
+    return {
+      messaggio: msg1,
+      messaggioEtichetta: 'Inserimento tavolo da ' + p1 + ' persone (random 1–8)',
+      nuovoId: nuovo1
+    };
+  }
+
+  if (azione === 'add9plus') {
+    var p2 = 9 + Math.floor(Math.random() * 16);
+    var nome2 = 'TG Fin+ ' + Utilities.getUuid().slice(0, 8);
+    var tel2 = '998' + ('0000000' + Math.floor(Math.random() * 10000000)).slice(-7);
+    var msg2 = aggiungiPrenotazione(nome2, tel2, p2, 'No', note);
+    var m2 = msg2.match(/#(\d+)/);
+    var nuovo2 = m2 ? parseInt(m2[1], 10) : null;
+    focusFoglioPlanimetria_();
+    return {
+      messaggio: msg2,
+      messaggioEtichetta: 'Inserimento tavolo da ' + p2 + ' persone (>8, random)',
+      nuovoId: nuovo2
+    };
+  }
+
+  if (azione === 'modifica') {
+    var valideM = tgPrenotazioniConfermateDaIds_(ids);
+    if (valideM.length === 0) {
+      throw new Error('Nessuna prenotazione attiva tracciata: inserisci prima con i tasti sopra.');
+    }
+    var sceltaM = valideM[Math.floor(Math.random() * valideM.length)];
+    var attuale = sceltaM.persone;
+    var nuoveP;
+    var tent;
+    for (tent = 0; tent < 12; tent++) {
+      nuoveP = 1 + Math.floor(Math.random() * 24);
+      if (nuoveP !== attuale) break;
+    }
+    var msgM = modificaPrenotazione(sceltaM.id, nuoveP, 'No', note);
+    focusFoglioPlanimetria_();
+    return {
+      messaggio: msgM,
+      messaggioEtichetta:
+        'Modifica prenotazione #' + sceltaM.id + ': da ' + attuale + ' a ' + nuoveP + ' persone (random)'
+    };
+  }
+
+  if (azione === 'cancella') {
+    var valideC = tgPrenotazioniConfermateDaIds_(ids);
+    if (valideC.length === 0) {
+      throw new Error('Nessuna prenotazione da cancellare: inserisci prima con i tasti sopra.');
+    }
+    var sceltaC = valideC[Math.floor(Math.random() * valideC.length)];
+    var msgC = cancellaPrenotazione(sceltaC.id);
+    focusFoglioPlanimetria_();
+    return {
+      messaggio: msgC,
+      messaggioEtichetta: 'Cancellazione prenotazione #' + sceltaC.id + ' (scelta casuale tra le sessioni)',
+      idRimosso: sceltaC.id
+    };
+  }
+
+  throw new Error('Azione FINALE sconosciuta: ' + azione);
 }
 
 /**
@@ -445,12 +567,49 @@ function getHtmlTestGuidato_() {
     + '    passi = list; renderStep();'
     + '  }).withFailureHandler(fail).getTestGuidatoPassiPerClient(sid);'
     + '}'
+    + 'function renderFinaleLibero(p) {'
+    + '  var h = "<h2>Test guidato</h2><p class=\\"meta\\">Scenario FINALE — azioni libere</p>";'
+    + '  h += "<div class=\\"box\\"><strong>" + p.titolo + "</strong>";'
+    + '  h += "<p>" + p.testo + "</p>";'
+    + '  h += "<div class=\\"verifica\\"><strong>Cosa controllare sulla planimetria</strong>" + p.verifica + "</div>";'
+    + '  h += "<p class=\\"meta\\" style=\\"margin-top:10px\\"><b>Ultima azione</b></p>";'
+    + '  h += "<div id=\\"lblFinale\\" class=\\"esito\\" style=\\"max-height:200px;border:1px solid #c8e6c9;padding:8px;border-radius:6px;background:#fafafa\\"></div></div>";'
+    + '  h += "<button type=\\"button\\" class=\\"btn-go\\" id=\\"tgFinAdd18\\">Inserimento tavolo 1–8 persone (random)</button>";'
+    + '  h += "<button type=\\"button\\" class=\\"btn-go\\" id=\\"tgFinAdd9\\">Inserimento tavolo oltre 8 persone (random)</button>";'
+    + '  h += "<button type=\\"button\\" class=\\"btn-go\\" id=\\"tgFinMod\\">Modifica prenotazione (numeri random)</button>";'
+    + '  h += "<button type=\\"button\\" class=\\"btn-go\\" id=\\"tgFinCan\\">Cancellazione prenotazione (random)</button>";'
+    + '  h += "<button type=\\"button\\" class=\\"btn-back\\" id=\\"tgFinEnd\\">Fine</button>";'
+    + '  h += "<button type=\\"button\\" class=\\"btn-back\\" id=\\"tgFinBack\\">Cambia scenario</button>";'
+    + '  el("root").innerHTML = h;'
+    + '  el("tgFinAdd18").onclick = function() { eseguiFinale("add1_8"); };'
+    + '  el("tgFinAdd9").onclick = function() { eseguiFinale("add9plus"); };'
+    + '  el("tgFinMod").onclick = function() { eseguiFinale("modifica"); };'
+    + '  el("tgFinCan").onclick = function() { eseguiFinale("cancella"); };'
+    + '  el("tgFinEnd").onclick = function() { fineFinale(); };'
+    + '  el("tgFinBack").onclick = function() { tornaScelta(); };'
+    + '}'
+    + 'function eseguiFinale(azione) {'
+    + '  var ctx = { ids: ids, scenarioId: scenarioId };'
+    + '  var lb = el("lblFinale"); if (lb) lb.textContent = "Attendere…";'
+    + '  google.script.run.withSuccessHandler(function(r) {'
+    + '    var l2 = el("lblFinale");'
+    + '    if (l2) {'
+    + '      var et = r.messaggioEtichetta || "";'
+    + '      var det = r.messaggio || "";'
+    + '      l2.textContent = et + (det && det !== et ? ("\\n\\n" + det) : (det && !et ? det : ""));'
+    + '    }'
+    + '    if (r.nuovoId) ids.push(r.nuovoId);'
+    + '    if (r.idRimosso) ids = ids.filter(function(x) { return x !== r.idRimosso; });'
+    + '  }).withFailureHandler(fail).testGuidatoEseguiAzioneFinale(azione, ctx);'
+    + '}'
+    + 'function fineFinale() { idx++; renderStep(); }'
     + 'function renderStep() {'
     + '  if (idx >= passi.length) {'
     + '    el("root").innerHTML = "<div class=\\"box\\"><b>Scenario completato.</b></div><button class=\\"btn-back\\" onclick=\\"tornaScelta()\\">Scegli un altro scenario</button>";'
     + '    return;'
     + '  }'
     + '  var p = passi[idx];'
+    + '  if (p.tipo === "finaleLibero") { renderFinaleLibero(p); return; }'
     + '  var btnLabel = "Continua";'
     + '  if (p.tipo === "batchRiempi") btnLabel = "Esegui riempimento (attendi…)";'
     + '  else if (p.tipo !== "info") btnLabel = "Esegui questo passo";'
