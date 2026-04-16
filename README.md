@@ -66,6 +66,12 @@ Sistema di gestione prenotazioni tavoli per la **Festa della cicoria**, basato s
 | Test in memoria | Esegui test automatici (Logger) |
 | Scenari sulla planimetria | Test guidato planimetria (sidebar) |
 
+### Modifica prenotazione
+
+1. **Cerca** la prenotazione: **per ID** (foglio PRENOTAZIONI) oppure **per nome e numero di persone** (nome come in elenco, confronto senza distinzione maiuscole/minuscole).
+2. Se **più prenotazioni** hanno lo stesso nome e lo stesso numero di persone, compare un avviso con gli **ID** coinvolti: ripeti la ricerca **per ID** scegliendo la riga giusta.
+3. Si aprono i campi **persone**, **telefono**, **disabili**, **note**: modifica ciò che serve e conferma con **Modifica prenotazione**. Puoi usare **Nuova ricerca** per ripartire dall’inizio.
+
 ## Come funziona l’ottimizzazione
 
 ### Assegnazione (best-fit)

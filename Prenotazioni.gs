@@ -367,7 +367,10 @@ function creaFoglioIstruzioni_() {
     ['- ROSSO: impossibile accettare la prenotazione'],
     [''],
     ['REGOLA 8: MODIFICA PRENOTAZIONE'],
-    ['Una prenotazione puo essere modificata (numero persone, disabili, note).'],
+    ['Dal menu Modifica Prenotazione: prima cerca la prenotazione (per ID oppure per nome + numero persone).'],
+    ['Se nome e persone coincidono su piu prenotazioni, il sistema elenca gli ID: usa la ricerca per ID per la riga corretta.'],
+    ['Dopo la ricerca si compilano i campi (persone, telefono, disabili, note); poi conferma con Modifica.'],
+    ['Una prenotazione puo essere modificata (numero persone, telefono, disabili, note).'],
     ['Se il numero di persone aumenta e il tavolo attuale non basta, il sistema'],
     ['riassegna automaticamente un tavolo adeguato (o multi-tavolo se necessario).'],
     ['Se si aggiunge la necessita di accesso disabili, il sistema sposta la prenotazione'],
@@ -1459,53 +1462,215 @@ function aggiungiPrenotazione(nome, telefono, persone, disabili, note) {
 // ============================================================
 function mostraFormModifica() {
   var html = HtmlService.createHtmlOutput(getHtmlModifica_())
-    .setWidth(420).setHeight(550).setTitle('Modifica Prenotazione');
+    .setWidth(420).setHeight(680).setTitle('Modifica Prenotazione');
   SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * Carica una prenotazione Confermata per ID (sidebar modifica).
+ * @param {number} id
+ */
+function modificaCercaPerId(id) {
+  var idN = parseInt(id, 10);
+  if (!idN || idN < 1) return { ok: false, messaggio: 'Inserisci un ID valido.' };
+  var dati = leggiTuttiIDati_();
+  var i;
+  for (i = 0; i < dati.prenotazioni.length; i++) {
+    var r = dati.prenotazioni[i];
+    if (r[0] === idN && r[8] === 'Confermata') {
+      return {
+        ok: true,
+        id: r[0],
+        nome: r[1],
+        telefono: r[2] != null ? String(r[2]) : '',
+        persone: r[3],
+        disabili: r[4],
+        note: r[9] != null ? String(r[9]) : '',
+        tavolo: r[5],
+        zona: r[6]
+      };
+    }
+  }
+  return { ok: false, messaggio: 'Prenotazione #' + idN + ' non trovata o non attiva (Confermata).' };
+}
+
+/**
+ * Cerca per nome (esatto, senza distinzione maiuscole/minuscole) e numero persone.
+ * Se più righe coincidono, restituisce ambiguo con elenco ID.
+ */
+function modificaCercaPerNomePersone(nomeRaw, personeRaw) {
+  var nome = (nomeRaw || '').toString().trim();
+  var persone = parseInt(personeRaw, 10);
+  if (!nome) return { ok: false, messaggio: 'Inserisci il nome della prenotazione.' };
+  if (!persone || persone < 1) return { ok: false, messaggio: 'Inserisci un numero di persone valido.' };
+  var dati = leggiTuttiIDati_();
+  var nomeLower = nome.toLowerCase();
+  var ids = [];
+  var i;
+  for (i = 0; i < dati.prenotazioni.length; i++) {
+    var r = dati.prenotazioni[i];
+    if (r[8] !== 'Confermata') continue;
+    var rn = (r[1] || '').toString().trim().toLowerCase();
+    if (rn === nomeLower && r[3] === persone) ids.push(r[0]);
+  }
+  if (ids.length === 0) {
+    return {
+      ok: false,
+      messaggio: 'Nessuna prenotazione Confermata con questo nome e questo numero di persone.'
+    };
+  }
+  ids.sort(function(a, b) {
+    return a - b;
+  });
+  if (ids.length > 1) {
+    return {
+      ok: false,
+      ambiguo: true,
+      ids: ids,
+      messaggio:
+        'Sono state trovate ' +
+        ids.length +
+        ' prenotazioni uguali (nome e persone). Usa la ricerca per ID e indica uno di questi numeri: ' +
+        ids.join(', ') +
+        '.'
+    };
+  }
+  return modificaCercaPerId(ids[0]);
 }
 
 function getHtmlModifica_() {
   return '<style>'
     + 'body { font-family: Arial, sans-serif; padding: 15px; margin: 0; }'
+    + 'h3 { font-size: 15px; margin: 0 0 10px; color: #333; }'
     + 'label { display: block; margin-top: 12px; font-weight: bold; font-size: 14px; }'
+    + 'label.inline { font-weight: normal; margin-top: 8px; }'
     + 'input, select { width: 100%; padding: 10px; margin-top: 4px; font-size: 14px;'
     + '  border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }'
-    + '.btn { margin-top: 16px; padding: 14px 24px; font-size: 16px; color: white;'
+    + '.meta { font-size: 12px; color: #555; margin: 6px 0 0; line-height: 1.4; }'
+    + '.btn { margin-top: 12px; padding: 12px 20px; font-size: 15px; color: white;'
     + '  border: none; border-radius: 8px; cursor: pointer; width: 100%; }'
+    + '.btn-cerca { background-color: #1976d2; margin-top: 16px; }'
+    + '.btn-cerca:hover:not(:disabled) { background-color: #1565c0; }'
     + '.btn-modifica { background-color: #ff9800; }'
     + '.btn-modifica:hover:not(:disabled) { background-color: #e68a00; }'
-    + '.btn-modifica:disabled { background-color: #999; cursor: wait; }'
-    + '#risultato { margin-top: 15px; padding: 12px; border-radius: 6px; font-size: 14px; display: none; line-height: 1.5; }'
+    + '.btn-secondario { background-color: #eceff1; color: #333; margin-top: 8px; }'
+    + '.btn-secondario:hover:not(:disabled) { background-color: #dfe3e6; }'
+    + '.btn:disabled { background-color: #999; cursor: wait; color: #fff; }'
+    + '#risultato { margin-top: 12px; padding: 12px; border-radius: 6px; font-size: 14px; display: none; line-height: 1.5; }'
+    + '#boxAmbiguo { margin-top: 12px; padding: 12px; border-radius: 6px; font-size: 13px; display: none; line-height: 1.5; }'
     + '.successo { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }'
     + '.errore { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }'
     + '.avviso { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }'
     + '.spinner { display: inline-block; width: 16px; height: 16px; border: 3px solid #fff; border-top-color: transparent;'
     + '  border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }'
     + '@keyframes spin { to { transform: rotate(360deg); } }'
+    + '.sezione { border-top: 1px solid #e0e0e0; margin-top: 14px; padding-top: 12px; }'
+    + '.nascosto { display: none; }'
     + '</style>'
-    + '<label>ID Prenotazione da modificare:</label>'
-    + '<input type="number" id="idPren" min="1" placeholder="Es: 3">'
-    + '<label>Nuovo Numero Persone:</label>'
+    + '<h3>1 — Trova la prenotazione</h3>'
+    + '<label class="inline"><input type="radio" name="tipoCerca" value="id" checked onchange="toggleTipoCerca()"> Per ID</label>'
+    + '<label class="inline"><input type="radio" name="tipoCerca" value="nome" onchange="toggleTipoCerca()"> Per nome e numero persone</label>'
+    + '<div id="boxId">'
+    + '<label>ID prenotazione</label>'
+    + '<input type="number" id="idCerca" min="1" placeholder="Es: 12">'
+    + '</div>'
+    + '<div id="boxNome" class="nascosto">'
+    + '<label>Nome (come in elenco)</label>'
+    + '<input type="text" id="nomeCerca" placeholder="Es: Mario Rossi" autocomplete="off">'
+    + '<label>Numero persone</label>'
+    + '<input type="number" id="persCerca" min="1" placeholder="Es: 4">'
+    + '</div>'
+    + '<button type="button" class="btn btn-cerca" id="btnCerca" onclick="cercaPrenotazione()">Cerca</button>'
+    + '<div id="boxAmbiguo" class="avviso"></div>'
+    + '<div id="sezioneModifica" class="sezione nascosto">'
+    + '<h3>2 — Modifica i dati</h3>'
+    + '<p class="meta"><strong>Nome:</strong> <span id="lblNome"></span></p>'
+    + '<p class="meta"><strong>ID</strong> <span id="lblId"></span> · <strong>Tavolo</strong> <span id="lblTav"></span> · <strong>Zona</strong> <span id="lblZona"></span></p>'
+    + '<input type="hidden" id="idPren">'
+    + '<label>Numero persone</label>'
     + '<input type="number" id="persone" min="1" placeholder="Es: 12">'
-    + '<label>Presenza Disabili:</label>'
+    + '<label>Telefono</label>'
+    + '<input type="text" id="telefono" placeholder="Numero di telefono">'
+    + '<label>Presenza disabili</label>'
     + '<select id="disabili"><option value="No">No</option><option value="Si">Si - servono tavoli accessibili</option></select>'
-    + '<label>Note:</label>'
+    + '<label>Note</label>'
     + '<input type="text" id="note" placeholder="Note aggiuntive...">'
-    + '<button class="btn btn-modifica" id="btnModifica" onclick="modifica()">MODIFICA PRENOTAZIONE</button>'
+    + '<button type="button" class="btn btn-modifica" id="btnModifica" onclick="modifica()">MODIFICA PRENOTAZIONE</button>'
+    + '<button type="button" class="btn btn-secondario" id="btnReset" onclick="resetFormModifica()">Nuova ricerca</button>'
+    + '</div>'
     + '<div id="risultato"></div>'
     + '<script>'
+    + 'function toggleTipoCerca() {'
+    + '  var perNome = document.querySelector("input[name=tipoCerca]:checked").value === "nome";'
+    + '  document.getElementById("boxId").className = perNome ? "nascosto" : "";'
+    + '  document.getElementById("boxNome").className = perNome ? "" : "nascosto";'
+    + '}'
+    + 'function cercaPrenotazione() {'
+    + '  document.getElementById("boxAmbiguo").style.display = "none";'
+    + '  document.getElementById("sezioneModifica").className = "sezione nascosto";'
+    + '  var tipo = document.querySelector("input[name=tipoCerca]:checked").value;'
+    + '  var b = document.getElementById("btnCerca"); b.disabled = true;'
+    + '  var prev = b.textContent; b.textContent = "Ricerca…";'
+    + '  function fine() { b.disabled = false; b.textContent = prev; }'
+    + '  if (tipo === "id") {'
+    + '    var id = parseInt(document.getElementById("idCerca").value, 10);'
+    + '    if (!id) { fine(); mostraRisultato("Inserisci un ID valido.", "errore"); return; }'
+    + '    google.script.run.withSuccessHandler(function(r) { fine(); applicaRisultatoCerca(r); })'
+    + '      .withFailureHandler(function(err) { fine(); mostraRisultato(err.message, "errore"); })'
+    + '      .modificaCercaPerId(id);'
+    + '    return;'
+    + '  }'
+    + '  var nome = document.getElementById("nomeCerca").value.trim();'
+    + '  var pers = document.getElementById("persCerca").value;'
+    + '  google.script.run.withSuccessHandler(function(r) { fine(); applicaRisultatoCerca(r); })'
+    + '    .withFailureHandler(function(err) { fine(); mostraRisultato(err.message, "errore"); })'
+    + '    .modificaCercaPerNomePersone(nome, pers);'
+    + '}'
+    + 'function applicaRisultatoCerca(r) {'
+    + '  nascondiRisultato();'
+    + '  if (r.ambiguo) {'
+    + '    var box = document.getElementById("boxAmbiguo");'
+    + '    box.style.display = "block";'
+    + '    box.textContent = r.messaggio || "Piu risultati: usa la ricerca per ID.";'
+    + '    return;'
+    + '  }'
+    + '  if (!r.ok) {'
+    + '    mostraRisultato(r.messaggio || "Ricerca senza esito.", "errore");'
+    + '    return;'
+    + '  }'
+    + '  document.getElementById("idPren").value = r.id;'
+    + '  document.getElementById("lblNome").textContent = r.nome || "";'
+    + '  document.getElementById("lblId").textContent = r.id;'
+    + '  document.getElementById("lblTav").textContent = r.tavolo != null ? String(r.tavolo) : "";'
+    + '  document.getElementById("lblZona").textContent = r.zona != null ? String(r.zona) : "";'
+    + '  document.getElementById("persone").value = r.persone;'
+    + '  document.getElementById("telefono").value = r.telefono || "";'
+    + '  document.getElementById("disabili").value = r.disabili === "Si" ? "Si" : "No";'
+    + '  document.getElementById("note").value = r.note || "";'
+    + '  document.getElementById("sezioneModifica").className = "sezione";'
+    + '}'
+    + 'function resetFormModifica() {'
+    + '  document.getElementById("sezioneModifica").className = "sezione nascosto";'
+    + '  document.getElementById("boxAmbiguo").style.display = "none";'
+    + '  nascondiRisultato();'
+    + '}'
+    + 'function nascondiRisultato() {'
+    + '  var d = document.getElementById("risultato"); d.style.display = "none"; d.textContent = "";'
+    + '}'
     + 'function modifica() {'
-    + '  var id = parseInt(document.getElementById("idPren").value);'
-    + '  var persone = parseInt(document.getElementById("persone").value);'
+    + '  var id = parseInt(document.getElementById("idPren").value, 10);'
+    + '  var persone = parseInt(document.getElementById("persone").value, 10);'
+    + '  var telefono = document.getElementById("telefono").value.trim();'
     + '  var disabili = document.getElementById("disabili").value;'
     + '  var note = document.getElementById("note").value.trim();'
-    + '  if (!id) { mostraRisultato("Inserisci un ID valido.", "errore"); return; }'
+    + '  if (!id) { mostraRisultato("Cerca prima una prenotazione.", "errore"); return; }'
     + '  if (!persone || persone < 1) { mostraRisultato("Inserisci un numero di persone valido.", "errore"); return; }'
     + '  var b = document.getElementById("btnModifica"); b.disabled = true;'
     + '  b.innerHTML = \'<span class="spinner"></span>Modifica in corso...\';'
     + '  google.script.run'
     + '    .withSuccessHandler(function(msg) { mostraRisultato(msg, "successo"); b.disabled = false; b.innerHTML = "MODIFICA PRENOTAZIONE"; })'
     + '    .withFailureHandler(function(err) { mostraRisultato(err.message, "errore"); b.disabled = false; b.innerHTML = "MODIFICA PRENOTAZIONE"; })'
-    + '    .modificaPrenotazione(id, persone, disabili, note);'
+    + '    .modificaPrenotazione(id, persone, disabili, note, telefono);'
     + '}'
     + 'function mostraRisultato(msg, tipo) { var d = document.getElementById("risultato");'
     + '  d.textContent = msg; d.className = tipo; d.style.display = "block"; }'
@@ -1516,7 +1681,7 @@ function getHtmlModifica_() {
  * Modifica prenotazione in memoria (stesso algoritmo del form). Aggiorna stato.tavoli.
  * @return {string} messaggio come modificaPrenotazione
  */
-function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note) {
+function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note, nuovoTelefono) {
   var rigaPren = -1;
   var prenotazione = null;
   var i;
@@ -1533,6 +1698,9 @@ function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note)
   var vecchioTavolo = prenotazione[5];
   var necessitaAccessibile = (disabili === 'Si');
 
+  if (nuovoTelefono !== undefined && nuovoTelefono !== null) {
+    stato.prenotazioni[rigaPren][2] = String(nuovoTelefono);
+  }
   stato.prenotazioni[rigaPren][3] = nuovePersone;
   stato.prenotazioni[rigaPren][4] = disabili;
   stato.prenotazioni[rigaPren][9] = note;
@@ -1627,9 +1795,16 @@ function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note)
   return 'Prenotazione #' + id + ' modificata: ' + nuovePersone + ' persone, disabili: ' + disabili + '.' + messaggioCambio;
 }
 
-function modificaPrenotazione(id, nuovePersone, disabili, note) {
+function modificaPrenotazione(id, nuovePersone, disabili, note, nuovoTelefono) {
   var dati = leggiTuttiIDati_();
-  var msg = modificaPrenotazioneInMemoria_({ tavoli: dati.tavoli, prenotazioni: dati.prenotazioni }, id, nuovePersone, disabili, note);
+  var msg = modificaPrenotazioneInMemoria_(
+    { tavoli: dati.tavoli, prenotazioni: dati.prenotazioni },
+    id,
+    nuovePersone,
+    disabili,
+    note,
+    nuovoTelefono
+  );
   dati.sheetPren.getRange(2, 1, dati.prenotazioni.length, dati.prenotazioni[0].length).setValues(dati.prenotazioni);
   var nuovaOcc = calcolaOccupazioneMappa_(dati.prenotazioni);
   aggiornaStatoTavoli_(dati.sheetTavoli, dati.tavoli, nuovaOcc);
