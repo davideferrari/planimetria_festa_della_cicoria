@@ -457,6 +457,61 @@ function tavoliToString_(arr) {
   return arr.join(';');
 }
 
+/** Chiave stabile per confrontare due assegnazioni tavolo (stessi numeri, ordine ignorato). */
+function chiaveTavoloNormalizzata_(valore) {
+  var arr = parseTavoli_(valore)
+    .slice()
+    .sort(function(a, b) {
+      return a - b;
+    });
+  return arr.join(';');
+}
+
+/**
+ * Messaggio di riepilogo dopo modifica prenotazione (sidebar e script).
+ * @param {string} notaSpostamenti Testo opzionale con spostamenti di altre prenotazioni (es. " [Spostati: ...]").
+ */
+function messaggioRiepilogoModificaPrenotazione_(
+  vecchioTavolo,
+  tavoloFinale,
+  vecchiePersone,
+  nuovePersone,
+  vecchiDisabili,
+  disabili,
+  notaSpostamenti
+) {
+  var parti = [];
+  parti.push('Prenotazione modificata');
+  var tavUguale = chiaveTavoloNormalizzata_(vecchioTavolo) === chiaveTavoloNormalizzata_(tavoloFinale);
+  if (tavUguale) {
+    parti.push('tavolo non cambiato');
+  } else {
+    parti.push(
+      'tavolo cambiato da T.' +
+        etichettaTavoliVisiva_(vecchioTavolo) +
+        ' a T.' +
+        etichettaTavoliVisiva_(tavoloFinale)
+    );
+  }
+  var vp = Number(vecchiePersone);
+  var np = Number(nuovePersone);
+  if (vp === np) {
+    parti.push('numero persone non cambiato');
+  } else {
+    parti.push('numero persone passato da ' + vp + ' a ' + np);
+  }
+  var vd = vecchiDisabili === 'Si' ? 'Si' : 'No';
+  var nd = disabili === 'Si' ? 'Si' : 'No';
+  if (vd === nd) {
+    parti.push('presenza disabili non cambiata');
+  } else {
+    parti.push('presenza disabili passata da ' + vd + ' a ' + nd);
+  }
+  var msg = parti.join(', ') + '.';
+  if (notaSpostamenti) msg += notaSpostamenti;
+  return msg;
+}
+
 /** Etichetta per messaggi all'utente (virgole ok, non scritta nel foglio). */
 function etichettaTavoliVisiva_(valoreOArr) {
   var arr = Array.isArray(valoreOArr) ? valoreOArr : parseTavoli_(valoreOArr);
@@ -1696,6 +1751,8 @@ function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note,
   if (!prenotazione) throw new Error('Prenotazione #' + id + ' non trovata o non attiva.');
 
   var vecchioTavolo = prenotazione[5];
+  var vecchiePersone = prenotazione[3];
+  var vecchiDisabili = prenotazione[4];
   var necessitaAccessibile = (disabili === 'Si');
 
   if (nuovoTelefono !== undefined && nuovoTelefono !== null) {
@@ -1726,7 +1783,7 @@ function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note,
     serveCambioTavolo = true;
   }
 
-  var messaggioCambio = '';
+  var notaSpostamenti = '';
 
   if (serveCambioTavolo) {
     if (nuovePersone <= POSTI_PER_TAVOLO) {
@@ -1738,7 +1795,7 @@ function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note,
           applicaSpostamentiSoloDati_(stato.prenotazioni, riorg.spostamenti);
           nuovoTavolo = riorg.tavolo;
           var nomiSp = riorg.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-          messaggioCambio += ' [Spostati: ' + nomiSp.join(', ') + ']';
+          notaSpostamenti += ' [Spostati: ' + nomiSp.join(', ') + ']';
         }
       }
       if (!nuovoTavolo) {
@@ -1750,7 +1807,7 @@ function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note,
           applicaSpostamentiSoloDati_(stato.prenotazioni, riorgMultiM.spostamenti);
           bloccoPiccoloM = riorgMultiM.blocco;
           var nomiM = riorgMultiM.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-          messaggioCambio += ' [Spostati: ' + nomiM.join(', ') + ']';
+          notaSpostamenti += ' [Spostati: ' + nomiM.join(', ') + ']';
         }
       }
       if (!nuovoTavolo && !bloccoPiccoloM) {
@@ -1759,17 +1816,15 @@ function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note,
           applicaSpostamentiSoloDati_(stato.prenotazioni, avanzataM.spostamenti);
           bloccoPiccoloM = avanzataM.blocco;
           var nomiA = avanzataM.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-          messaggioCambio += ' [Spostati: ' + nomiA.join(', ') + ']';
+          notaSpostamenti += ' [Spostati: ' + nomiA.join(', ') + ']';
         }
       }
       if (nuovoTavolo) {
         stato.prenotazioni[rigaPren][5] = nuovoTavolo.tavolo;
         stato.prenotazioni[rigaPren][6] = nuovoTavolo.zona;
-        messaggioCambio = ' Tavolo cambiato: T.' + etichettaTavoliVisiva_(vecchioTavolo) + ' -> T.' + etichettaTavoliVisiva_(nuovoTavolo.tavolo) + '.' + messaggioCambio;
       } else if (bloccoPiccoloM) {
         stato.prenotazioni[rigaPren][5] = tavoliToString_(bloccoPiccoloM.tavoli);
         stato.prenotazioni[rigaPren][6] = bloccoPiccoloM.zona;
-        messaggioCambio = ' Tavoli cambiati: T.' + etichettaTavoliVisiva_(vecchioTavolo) + ' -> T.' + etichettaTavoliVisiva_(bloccoPiccoloM.tavoli) + '.' + messaggioCambio;
       } else {
         throw new Error('Nessun tavolo (o blocco adiacente) disponibile per ' + nuovePersone + ' persone.');
       }
@@ -1781,18 +1836,26 @@ function modificaPrenotazioneInMemoria_(stato, id, nuovePersone, disabili, note,
           applicaSpostamentiSoloDati_(stato.prenotazioni, riorgMulti.spostamenti);
           blocco = riorgMulti.blocco;
           var nomiSp2 = riorgMulti.spostamenti.map(function(s) { return s.nome + ' (da T.' + etichettaTavoliVisiva_(s.daTavolo) + ' a T.' + etichettaTavoliVisiva_(s.aTavolo) + ')'; });
-          messaggioCambio += ' [Spostati: ' + nomiSp2.join(', ') + ']';
+          notaSpostamenti += ' [Spostati: ' + nomiSp2.join(', ') + ']';
         }
       }
       if (!blocco) throw new Error('Nessun blocco di tavoli adiacenti per ' + nuovePersone + ' persone.');
       stato.prenotazioni[rigaPren][5] = tavoliToString_(blocco.tavoli);
       stato.prenotazioni[rigaPren][6] = blocco.zona;
-      messaggioCambio = ' Tavoli cambiati: T.' + etichettaTavoliVisiva_(vecchioTavolo) + ' -> T.' + etichettaTavoliVisiva_(blocco.tavoli) + '.' + messaggioCambio;
     }
   }
 
+  var tavoloFinale = stato.prenotazioni[rigaPren][5];
   aggiornaRigheTavoliDaOccupazione_(stato.tavoli, calcolaOccupazioneMappa_(stato.prenotazioni));
-  return 'Prenotazione #' + id + ' modificata: ' + nuovePersone + ' persone, disabili: ' + disabili + '.' + messaggioCambio;
+  return messaggioRiepilogoModificaPrenotazione_(
+    vecchioTavolo,
+    tavoloFinale,
+    vecchiePersone,
+    nuovePersone,
+    vecchiDisabili,
+    disabili,
+    notaSpostamenti
+  );
 }
 
 function modificaPrenotazione(id, nuovePersone, disabili, note, nuovoTelefono) {
